@@ -6,8 +6,8 @@
 namespace RSP
 {
 extern RSP_INFO rsp;
-extern short MFC0_count[32];
-extern int SP_STATUS_TIMEOUT;
+extern uint32_t MFC0_count[32];
+extern uint32_t SP_STATUS_TIMEOUT;
 } // namespace RSP
 #endif
 
@@ -35,8 +35,10 @@ extern "C"
 		// WAIT_FOR_CPU_HOST. From CXD4.
 		if (rd == CP0_REGISTER_SP_STATUS)
 		{
+			--rsp->instruction_count; // Some games check the STATUS reg more than normal since we don't really yield properly
 			RSP::MFC0_count[rt] += 1;
-			if (RSP::MFC0_count[rt] >= RSP::SP_STATUS_TIMEOUT)
+			//We don't return control to the CPU if the RDP FREEZE bit is set, doing so seems to cause flickering
+			if (RSP::MFC0_count[rt] >= RSP::SP_STATUS_TIMEOUT && (*rsp->cp0.cr[CP0_REGISTER_CMD_STATUS] & 0x2) == 0)
 			{
 				*RSP::rsp.SP_STATUS_REG |= SP_STATUS_HALT;
 				return MODE_CHECK_FLAGS;

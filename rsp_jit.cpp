@@ -305,6 +305,25 @@ extern "C"
 		printf("  ... Enter 0x%03x ...  ", unsigned(pc & 0xffcu));
 	}
 #endif
+	static void add_instruction_count(CPUState *rsp, uint32_t instruction_type)
+	{
+		if (instruction_type == rsp->last_instruction_type)
+		{
+			++rsp->instruction_count;
+			rsp->instruction_pipeline = 0;
+		}
+		else
+		{
+			rsp->last_instruction_type = instruction_type;
+			if (rsp->instruction_pipeline)
+			{
+				++rsp->instruction_count;
+				rsp->instruction_pipeline = 0;
+			}
+			else
+				rsp->instruction_pipeline = 1;
+		}
+	}
 }
 
 void CPU::jit_save_indirect_register(jit_state_t *_jit, unsigned mips_register)
@@ -864,6 +883,11 @@ void CPU::jit_instruction(jit_state_t *_jit, uint32_t pc, uint32_t instr,
 	// VU
 	if ((instr >> 25) == 0x25)
 	{
+		regs.flush_register_window(_jit);
+		jit_begin_call(_jit);
+		jit_pushargr(JIT_REGISTER_STATE);
+		jit_pushargi(RSP::VU_INSTRUCTION);
+		jit_end_call(_jit, reinterpret_cast<jit_pointer_t>(add_instruction_count));
 		// VU instruction. COP2, and high bit of opcode is set.
 		uint32_t op = instr & 63;
 		uint32_t vd = (instr >> 6) & 31;
@@ -884,7 +908,11 @@ void CPU::jit_instruction(jit_state_t *_jit, uint32_t pc, uint32_t instr,
 
 		auto *vuop = ops[op];
 		if (!vuop)
+		{
+			printf("UNKNOWN RSP VU COMMAND %u\n", op);
+			exit(1);
 			vuop = RSP_RESERVED;
+		}
 
 		regs.flush_caller_save_registers(_jit);
 		jit_begin_call(_jit);
@@ -895,6 +923,14 @@ void CPU::jit_instruction(jit_state_t *_jit, uint32_t pc, uint32_t instr,
 		jit_pushargi(e);
 		jit_end_call(_jit ,reinterpret_cast<jit_pointer_t>(vuop));
 		return;
+	}
+	else
+	{
+		regs.flush_register_window(_jit);
+		jit_begin_call(_jit);
+		jit_pushargr(JIT_REGISTER_STATE);
+		jit_pushargi(RSP::SU_INSTRUCTION);
+		jit_end_call(_jit, reinterpret_cast<jit_pointer_t>(add_instruction_count));
 	}
 
 	// TODO: Meaningful register allocation.
@@ -1691,6 +1727,8 @@ void CPU::jit_instruction(jit_state_t *_jit, uint32_t pc, uint32_t instr,
 	}
 
 	default:
+		printf("UNKNOWN RSP SU COMMAND %o\n", type);
+		exit(1);
 		break;
 	}
 }
@@ -1927,14 +1965,13 @@ ReturnMode CPU::run()
 		{
 		case MODE_BREAK:
 			*state.cp0.cr[CP0_REGISTER_SP_STATUS] |= SP_STATUS_BROKE | SP_STATUS_HALT;
-			if (*state.cp0.cr[CP0_REGISTER_SP_STATUS] & SP_STATUS_INTR_BREAK)
-				*state.cp0.irq |= 1;
 #ifndef PARALLEL_INTEGRATION
 			print_registers();
 #endif
 			return MODE_BREAK;
 
 		case MODE_CHECK_FLAGS:
+		case MODE_EXIT:
 		case MODE_DMA_READ:
 			return static_cast<ReturnMode>(ret);
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012-2019  Free Software Foundation, Inc.
+ * Copyright (C) 2012-2023  Free Software Foundation, Inc.
  *
  * This file is part of GNU lightning.
  *
@@ -53,6 +53,26 @@
 #  define likely(exprn)		exprn
 #  define PUBLIC		/**/
 #  define HIDDEN		/**/
+#endif
+
+#if PACKED_STACK || STRONG_TYPE_CHECKING
+#  define assert_arg_type(code, expect)					\
+    do assert((code) == (expect)); while (0)
+#  define assert_putarg_type(code, expect)				\
+    do									\
+	assert((((code) - jit_code_putargr_c) >> 2) ==			\
+	       ((expect) - jit_code_arg_c));				\
+    while (0)
+#else
+#  define assert_arg_type(code, expect)					\
+    do assert((int)(code) == (int)(expect) ||				\
+	      (code) == jit_code_arg); while (0)
+#  define assert_putarg_type(code, expect)				\
+    do									\
+	assert(((((code) - jit_code_putargr_c) >> 2) ==			\
+	       ((expect) - jit_code_arg_c)) ||				\
+	       ((code) == jit_code_arg));				\
+    while (0)
 #endif
 
 #define rc(value)		jit_class_##value
@@ -150,6 +170,13 @@ typedef jit_uint64_t		jit_regset_t;
 #  define JIT_RET		_A0
 #  define JIT_FRET		_FA0
 typedef jit_uint64_t		jit_regset_t;
+#elif defined(__loongarch__)
+#  define JIT_RA0		_A0
+#  define JIT_FA0		_FA0
+#  define JIT_SP		_SP
+#  define JIT_RET		_A0
+#  define JIT_FRET		_FA0
+typedef jit_uint64_t		jit_regset_t;
 #endif
 
 #define jit_data(u,v,w)		_jit_data(_jit,u,v,w)
@@ -167,47 +194,79 @@ extern jit_node_t *_jit_data(jit_state_t*, const void*,
     (!jit_regset_tstbit(&_jitc->regarg, regno) &&			\
      !jit_regset_tstbit(&_jitc->regsav, regno))
 
-#define jit_inc_synth(code)						\
+#define jit_code_inc_synth(code)					\
     do {								\
-	(void)jit_new_node(jit_code_##code);				\
+	(void)jit_new_node(code);					\
 	jit_synth_inc();						\
     } while (0)
-#define jit_inc_synth_w(code, u)					\
+#define jit_inc_synth(name)						\
+    jit_code_inc_synth(jit_code_##name)
+#define jit_code_inc_synth_w(code, u)					\
     do {								\
-	(void)jit_new_node_w(jit_code_##code, u);			\
+	(void)jit_new_node_w(code, u);					\
 	jit_synth_inc();						\
     } while (0)
-#define jit_inc_synth_f(code, u)					\
+#define jit_inc_synth_w(name, u)					\
+    jit_code_inc_synth_w(jit_code_##name, u)
+#define jit_code_inc_synth_f(code, u)					\
     do {								\
-	(void)jit_new_node_f(jit_code_##code, u);			\
+	(void)jit_new_node_f(code, u);					\
 	jit_synth_inc();						\
     } while (0)
-#define jit_inc_synth_d(code, u)					\
+#define jit_inc_synth_f(name, u)					\
+    jit_code_inc_synth_f(jit_code_##name, u)
+#define jit_code_inc_synth_d(code, u)					\
     do {								\
-	(void)jit_new_node_d(jit_code_##code, u);			\
+	(void)jit_new_node_d(code, u);					\
 	jit_synth_inc();						\
     } while (0)
-#define jit_inc_synth_ww(code, u, v)					\
+#define jit_inc_synth_d(name, u)					\
+    jit_code_inc_synth_d(jit_code_##name, u)
+#define jit_code_inc_synth_ww(code, u, v)				\
     do {								\
-	(void)jit_new_node_ww(jit_code_##code, u, v);			\
+	(void)jit_new_node_ww(code, u, v);				\
 	jit_synth_inc();						\
     } while (0)
-#define jit_inc_synth_wp(code, u, v)					\
+#define jit_inc_synth_ww(name, u, v)					\
+    jit_code_inc_synth_ww(jit_code_##name, u, v)
+#define jit_code_inc_synth_wp(code, u, v)				\
     do {								\
-	(void)jit_new_node_wp(jit_code_##code, u, v);			\
+	(void)jit_new_node_wp(code, u, v);				\
 	jit_synth_inc();						\
     } while (0)
-#define jit_inc_synth_fp(code, u, v)					\
+#define jit_inc_synth_wp(name, u, v)					\
+    jit_code_inc_synth_wp(jit_code_##name, u, v)
+#define jit_code_inc_synth_fp(code, u, v)				\
     do {								\
-	(void)jit_new_node_fp(jit_code_##code, u, v);			\
+	(void)jit_new_node_fp(code, u, v);				\
 	jit_synth_inc();						\
     } while (0)
-#define jit_inc_synth_dp(code, u, v)					\
+#define jit_inc_synth_fp(name, u, v)					\
+    jit_code_inc_synth_fp(jit_code_##name, u, v)
+#define jit_code_inc_synth_dp(code, u, v)				\
     do {								\
-	(void)jit_new_node_dp(jit_code_##code, u, v);			\
+	(void)jit_new_node_dp(code, u, v);				\
 	jit_synth_inc();						\
     } while (0)
+#define jit_inc_synth_dp(name, u, v)					\
+    jit_code_inc_synth_dp(jit_code_##name, u, v)
 #define jit_dec_synth()		jit_synth_dec()
+
+#define jit_link_alist(node)						\
+    do {								\
+	node->link = _jitc->function->alist;				\
+	_jitc->function->alist = node;					\
+    } while (0)
+#define jit_check_frame()						\
+    do {								\
+	if (!_jitc->function->need_frame) {				\
+	    _jitc->again = 1;						\
+	    _jitc->function->need_frame = 1;				\
+	}								\
+    } while (0)
+#define jit_diffsize()	(stack_framesize - _jitc->framesize)
+#define jit_framesize()	(stack_framesize - jit_diffsize())
+#define jit_selfsize()	(_jitc->function->self.size - jit_diffsize())
 
 #define jit_link_prolog()						\
     do {								\
@@ -241,8 +300,8 @@ extern jit_node_t *_jit_data(jit_state_t*, const void*,
 #define jit_class_xpr		0x80000000	/* float / vector */
 /* Used on sparc64 where %f0-%f31 can be encode for single float
  * but %f32 to %f62 only as double precision */
-#define jit_class_sng		0x10000000	/* Single precision float */
-#define jit_class_dbl		0x20000000	/* Only double precision float */
+#define jit_class_sng		0x00010000	/* Single precision float */
+#define jit_class_dbl		0x00020000	/* Only double precision float */
 #define jit_regno_patch		0x00008000	/* this is a register
 						 * returned by a "user" call
 						 * to jit_get_reg() */
@@ -276,6 +335,7 @@ extern jit_node_t *_jit_data(jit_state_t*, const void*,
 #define jit_cc_a2_int		0x00100000	/* arg2 is immediate word */
 #define jit_cc_a2_flt		0x00200000	/* arg2 is immediate float */
 #define jit_cc_a2_dbl		0x00400000	/* arg2 is immediate double */
+#define jit_cc_a2_rlh		0x00800000	/* arg2 is a register pair */
 
 #if __ia64__ || (__sparc__ && __WORDSIZE == 64)
 extern void
@@ -364,6 +424,8 @@ typedef struct jit_register	jit_register_t;
 #  if DISASSEMBLER
 typedef struct jit_data_info	jit_data_info_t;
 #  endif
+#elif __riscv
+typedef struct jit_const	jit_const_t;
 #endif
 
 union jit_data {
@@ -413,6 +475,9 @@ struct jit_block {
     jit_node_t		*label;
     jit_regset_t	 reglive;
     jit_regset_t	 regmask;
+    jit_bool_t		 again;		/* Flag need to rebuild regset masks
+					 * due to changes in live and unknown
+					 * state. */
 };
 
 struct jit_value {
@@ -435,6 +500,12 @@ struct jit_data_info {
     jit_uword_t		  code;		/* pointer in code buffer */
     jit_word_t		  length;	/* length of constant vector */
 };
+#elif __riscv && __WORDSIZE == 64
+struct jit_const {
+    jit_word_t		  value;
+    jit_word_t		  address;
+    jit_const_t		 *next;
+};
 #endif
 
 struct jit_function {
@@ -455,9 +526,14 @@ struct jit_function {
     } call;
     jit_node_t		*prolog;
     jit_node_t		*epilog;
+    jit_node_t		*alist;
     jit_int32_t		*regoff;
     jit_regset_t	 regset;
     jit_int32_t		 stack;
+#if defined(__i386__) || defined(__x86_64__)
+    jit_int32_t		 cvt_offset;	/* allocai'd offset for x87<->xmm or
+					 * fpr<->gpr transfer using the stack */
+#endif
 
     /* Helper for common jit generation pattern, used in GNU Smalltalk
      * and possibly others, where a static frame layout is required or
@@ -466,10 +542,24 @@ struct jit_function {
     jit_uint32_t	 define_frame : 1;
     jit_uint32_t	 assume_frame : 1;
 
+    jit_uint32_t	 need_frame : 1;	/* need frame pointer? */
+    jit_uint32_t	 need_stack : 1;	/* need stack pointer? */
+    jit_uint32_t	 need_return : 1;	/* not a leaf function */
+
     /* alloca offset offset */
     jit_int32_t		 aoffoff;
     /* uses allocar flag */
     jit_uint32_t	 allocar : 1;
+
+#if __arm__
+    /* If will, or might use float registers and vfp is not available.
+     * Use the first 64 bytes always, as the access to the virtual float
+     * registers use hardcoded instructions that can only reach 64 byte
+     * displacements, and to keep code simpler, do not use temporaries. */
+    jit_uint32_t	  swf_offset : 1;
+    /* If need to call C functions for some operation, or variadic function */
+    jit_uint32_t	  save_reg_args : 1;
+#endif
 
     /* varargs state offsets */
     jit_int32_t		 vaoff;		/* offset of jit_va_list */
@@ -491,7 +581,7 @@ struct jit_compiler {
     jit_int32_t		  breg;		/* base register for prolog/epilog */
 #endif
 #if __mips__ || __ia64__ || __alpha__ || \
-	(__sparc__ && __WORDSIZE == 64) || __riscv
+	(__sparc__ && __WORDSIZE == 64) || __riscv || __loongarch__
     jit_int32_t		  carry;
 #define jit_carry	  _jitc->carry
 #endif
@@ -509,11 +599,14 @@ struct jit_compiler {
 #endif
     jit_uint32_t	  no_data : 1;
     jit_uint32_t	  no_note : 1;
+    jit_int32_t		  framesize;	/* space for callee save registers,
+					 * frame pointer and return address */
     jit_int32_t		  reglen;	/* number of registers */
     jit_regset_t	  regarg;	/* cannot allocate */
     jit_regset_t	  regsav;	/* automatic spill only once */
     jit_regset_t	  reglive;	/* known live registers at some point */
     jit_regset_t	  regmask;	/* register mask to update reglive */
+    jit_regset_t	  explive;	/* explicitly marked as live */
     struct {
 	jit_uint8_t	 *end;
     } code;
@@ -594,6 +687,27 @@ struct jit_compiler {
 	jit_word_t	  length;
     } prolog;
     jit_bool_t		  jump;
+#elif __riscv && __WORDSIZE == 64
+    struct {
+	/* Hash table for constants to be resolved and patched */
+	struct {
+	    jit_const_t	**table;	/* very simple hash table */
+	    jit_word_t	  size;		/* number of vectors in table */
+	    jit_word_t	  count;	/* number of distinct entries */
+	} hash;
+	struct {
+	    jit_const_t	**ptr;		/* keep a single pointer */
+	    jit_const_t	 *list;		/* free list */
+	    jit_word_t	  length;	/* length of pool */
+	} pool;
+	/* Linear list for constants that cannot be encoded easily */
+	struct {
+	    jit_word_t	 *instrs;	/* list of direct movi instructions */
+	    jit_word_t	 *values;	/* list of direct movi constants */
+	    jit_word_t	  offset;	/* offset in instrs/values vector */
+	    jit_word_t	  length;	/* length of instrs/values vector */
+	} vector;
+    } consts;
 #endif
 #if GET_JIT_SIZE
     /* Temporary storage to calculate instructions length */
@@ -617,6 +731,8 @@ struct jit_state {
     struct {
 	jit_uint8_t	*ptr;
 	jit_word_t	 length;
+        /* PROTECTED bytes starting at PTR are mprotect'd. */
+        jit_word_t       protected;
     } code;
     struct {
 	jit_uint8_t	*ptr;

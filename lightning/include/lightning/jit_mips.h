@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012-2019  Free Software Foundation, Inc.
+ * Copyright (C) 2012-2023  Free Software Foundation, Inc.
  *
  * This file is part of GNU lightning.
  *
@@ -113,5 +113,14 @@ typedef enum {
 #define JIT_NOREG		_NOREG
     _NOREG,
 } jit_reg_t;
+
+typedef struct {
+    jit_uint32_t release	: 4;
+} jit_cpu_t;
+
+/*
+ * Initialization
+ */
+extern jit_cpu_t		jit_cpu;
 
 #endif /* _jit_mips_h */

@@ -1,5 +1,5 @@
 dnl
-dnl Copyright 2000, 2001, 2002, 2012-2019 Free Software Foundation, Inc.
+dnl Copyright 2000, 2001, 2002, 2012-2023 Free Software Foundation, Inc.
 dnl
 dnl This file is part of GNU lightning.
 dnl
@@ -14,8 +14,8 @@ dnl or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public
 dnl License for more details.
 dnl
 
-AC_PREREQ(2.64)
-AC_INIT([GNU lightning], 2.1.3, pcpa@gnu.org, lightning)
+AC_PREREQ([2.71])
+AC_INIT([GNU lightning],[2.2.1],[pcpa@gnu.org],[lightning])
 AC_CONFIG_AUX_DIR([build-aux])
 AC_CANONICAL_TARGET
 AC_CONFIG_SRCDIR([Makefile.am])
@@ -58,6 +58,12 @@ case "$target_cpu" in
 		else
 		    CFLAGS="$CFLAGS -ieee_with_no_inexact"
 		fi				;;
+	    *)					;;
+	esac					;;
+    aarch64)
+	case "$host_os" in
+	    darwin*)
+		LIGHTNING_CFLAGS="$LIGHTNING_CFLAGS -DPACKED_STACK=1"			;;
 	    *)					;;
 	esac					;;
     *)						;;
@@ -123,10 +129,8 @@ AM_CONDITIONAL(with_disassembler, [test "x$DISASSEMBLER" != "xno"])
 if test "x$DISASSEMBLER" != "xno"; then
     LIGHTNING_CFLAGS="$LIGHTNING_CFLAGS -DDISASSEMBLER=1"
     save_CFLAGS=$CFLAGS
-    CFLAGS="$CFLAGS -I$PWD/include -D_GNU_SOURCE"
+    CFLAGS="$CFLAGS -D_GNU_SOURCE"
     AC_COMPILE_IFELSE([AC_LANG_SOURCE(
-	#include <lightning.h>
-	#include <lightning/jit_private.h>
 	#include <dis-asm.h>
 	int main(int argc, char *argv[])
 	{
@@ -136,9 +140,21 @@ if test "x$DISASSEMBLER" != "xno"; then
 		return 0;
 	}
     )], [ac_cv_test_new_disassembler=no],,)
+    AC_COMPILE_IFELSE([AC_LANG_SOURCE(
+	#include <dis-asm.h>
+	int main(int argc, char *argv[])
+	{
+		struct disassemble_info dinfo;
+		INIT_DISASSEMBLE_INFO(dinfo, NULL, NULL, NULL);
+		return 0;
+	}
+    )], [ac_cv_test_new_disassemble_info=yes],[ac_cv_test_new_disassemble_info=no],)
     CFLAGS="$save_CFLAGS"
     if test "x$ac_cv_test_new_disassembler" != "xno"; then
 	LIGHTNING_CFLAGS="$LIGHTNING_CFLAGS -DBINUTILS_2_29=1"
+    fi
+    if test "x$ac_cv_test_new_disassemble_info" != "xno"; then
+	LIGHTNING_CFLAGS="$LIGHTNING_CFLAGS -DBINUTILS_2_38=1"
     fi
 fi
 
@@ -153,17 +169,6 @@ if test "x$DEVEL_DISASSEMBLER" != "xno"; then
     LIGHTNING_CFLAGS="$LIGHTNING_CFLAGS -DDEVEL_DISASSEMBLER=1"
 fi
 
-AC_ARG_ENABLE(assertions,
-	      AS_HELP_STRING([--enable-assertions],
-			     [Enable runtime code generation assertions]),
-	      [DEBUG=$enableval], [DEBUG=auto])
-if test "x$DEBUG" = xyes; then
-    LIGHTNING_CFLAGS="$LIGHTNING_CFLAGS -DDEBUG=1"
-else
-    LIGHTNING_CFLAGS="$LIGHTNING_CFLAGS -DNDEBUG"
-    DEBUG=no
-fi
-
 # This option is only useful during development.
 AC_ARG_ENABLE(devel-get-jit-size,
 	      AS_HELP_STRING([--enable-devel-get-jit-size],
@@ -171,11 +176,36 @@ AC_ARG_ENABLE(devel-get-jit-size,
 	      [GET_JIT_SIZE=$enableval], [GET_JIT_SIZE=no])
 AM_CONDITIONAL(get_jit_size, [test $GET_JIT_SIZE = yes])
 
-case "$host_os" in
-    *bsd*|osf*)		SHLIB=""	;;
-    *hpux*)		SHLIB="-ldld"	;;
-    *)			SHLIB="-ldl"	;;
-esac
+AC_ARG_ENABLE(assertions,
+	      AS_HELP_STRING([--enable-assertions],
+			     [Enable runtime code generation assertions]),
+	      [DEBUG=$enableval], [DEBUG=auto])
+
+# This option might be made default in the future
+# Currently it is only useful to ensure existing code will work
+# if PACKED_STACK is also defined.
+AC_ARG_ENABLE(devel-strong-type-checking,
+	      AS_HELP_STRING([--enable-devel-strong-type-checking],
+			     [Devel mode for strong type checking]),
+	      [STRONG_TYPE_CHECKING=$enableval], [STRONG_TYPE_CHECKING=no])
+if test "x$DEBUG" = xyes -o x"$STRONG_TYPE_CHECKING" = xyes; then
+    LIGHTNING_CFLAGS="$LIGHTNING_CFLAGS -DDEBUG=1"
+else
+    LIGHTNING_CFLAGS="$LIGHTNING_CFLAGS -DNDEBUG"
+    DEBUG=no
+fi
+AM_CONDITIONAL(strong_type_checking, [test $STRONG_TYPE_CHECKING = yes])
+
+AC_CHECK_LIB(dl, dlopen, [HAVE_LIBDL="yes"])
+AC_CHECK_LIB(dld, dlopen, [HAVE_LIBDLD="yes"])
+
+if test "x$HAVE_LIBDL" = xyes; then
+    SHLIB="-ldl";
+elif test "x$HAVE_LIBDLD" = xyes; then
+    SHLIB="-ldld";
+else
+    SHLIB="";
+fi
 AC_SUBST(SHLIB)
 
 cpu=
@@ -191,19 +221,21 @@ case "$target_cpu" in
     s390*)		cpu=s390	;;
     alpha*)		cpu=alpha	;;
     riscv*)		cpu=riscv	;;
+    loongarch*)		cpu=loongarch	;;
     *)					;;
 esac
-AM_CONDITIONAL(cpu_arm,     [test cpu-$cpu = cpu-arm])
-AM_CONDITIONAL(cpu_mips,    [test cpu-$cpu = cpu-mips])
-AM_CONDITIONAL(cpu_ppc,     [test cpu-$cpu = cpu-ppc])
-AM_CONDITIONAL(cpu_sparc,   [test cpu-$cpu = cpu-sparc])
-AM_CONDITIONAL(cpu_x86,     [test cpu-$cpu = cpu-x86])
-AM_CONDITIONAL(cpu_ia64,    [test cpu-$cpu = cpu-ia64])
-AM_CONDITIONAL(cpu_hppa,    [test cpu-$cpu = cpu-hppa])
-AM_CONDITIONAL(cpu_aarch64, [test cpu-$cpu = cpu-aarch64])
-AM_CONDITIONAL(cpu_s390,    [test cpu-$cpu = cpu-s390])
-AM_CONDITIONAL(cpu_alpha,   [test cpu-$cpu = cpu-alpha])
-AM_CONDITIONAL(cpu_riscv,   [test cpu-$cpu = cpu-riscv])
+AM_CONDITIONAL(cpu_arm,       [test cpu-$cpu = cpu-arm])
+AM_CONDITIONAL(cpu_mips,      [test cpu-$cpu = cpu-mips])
+AM_CONDITIONAL(cpu_ppc,       [test cpu-$cpu = cpu-ppc])
+AM_CONDITIONAL(cpu_sparc,     [test cpu-$cpu = cpu-sparc])
+AM_CONDITIONAL(cpu_x86,       [test cpu-$cpu = cpu-x86])
+AM_CONDITIONAL(cpu_ia64,      [test cpu-$cpu = cpu-ia64])
+AM_CONDITIONAL(cpu_hppa,      [test cpu-$cpu = cpu-hppa])
+AM_CONDITIONAL(cpu_aarch64,   [test cpu-$cpu = cpu-aarch64])
+AM_CONDITIONAL(cpu_s390,      [test cpu-$cpu = cpu-s390])
+AM_CONDITIONAL(cpu_alpha,     [test cpu-$cpu = cpu-alpha])
+AM_CONDITIONAL(cpu_riscv,     [test cpu-$cpu = cpu-riscv])
+AM_CONDITIONAL(cpu_loongarch, [test cpu-$cpu = cpu-loongarch])
 
 # Test x87 if both, x87 and sse2 available
 ac_cv_test_x86_x87=
@@ -213,16 +245,15 @@ ac_cv_test_arm_arm=
 ac_cv_test_arm_swf=
 
 save_CFLAGS=$CFLAGS
-CFLAGS="$CFLAGS -I$PWD/include -D_GNU_SOURCE"
+CFLAGS="$CFLAGS -D_GNU_SOURCE"
 if test x$cpu = x; then
     AC_MSG_ERROR([cpu $target_cpu not supported])
 elif test $cpu = x86; then
     AC_RUN_IFELSE([AC_LANG_SOURCE([[
-    #include <lightning.h>
     int main(void) {
 	int		    ac, flags;
 	unsigned int	    eax, ebx, ecx, edx;
-	if (__WORDSIZE == 64)
+	if (sizeof(long) == 8)
 	    return 1;
 	__asm__ volatile ("pushfl;\n\t"
 			  "popl %0;\n\t"
@@ -318,7 +349,7 @@ if test $ac_cv_header_stdint_h = yes; then
     AC_SUBST(MAYBE_INCLUDE_STDINT_H, ["#include <stdint.h>"])
 fi
 
-AC_OUTPUT([Makefile
+AC_CONFIG_FILES([Makefile
 	   lightning.pc
            gnulib-lib/Makefile
 	   doc/Makefile
@@ -327,3 +358,4 @@ AC_OUTPUT([Makefile
 	   include/lightning.h
 	   lib/Makefile
 	   check/Makefile])
+AC_OUTPUT
